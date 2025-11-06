@@ -56,6 +56,7 @@ class BTree {
       return;
     }
 
+    this.insertedKeys.push(key);
     this.addStep('🔵', `Insert ${key}`, [key]);
     
     const root = this.root;
@@ -144,6 +145,179 @@ class BTree {
     this.addStep('✅', `Split complete: left [${fullChild.keys.join(', ')}], promoted ${midKey}, right [${newChild.keys.join(', ')}]`);
   }
 
+  delete(key) {
+    if (!this.search(this.root, key)) {
+      this.addStep('⚠️', `Key ${key} not found (cannot delete)`);
+      return;
+    }
+
+    this.addStep('🔵', `Delete ${key}`, [key]);
+    this.deleteFromNode(this.root, key);
+    
+    // Remove from tracking
+    const idx = this.insertedKeys.indexOf(key);
+    if (idx > -1) {
+      this.insertedKeys.splice(idx, 1);
+    }
+    
+    // Handle root becoming empty
+    if (this.root.keys.length === 0 && !this.root.isLeaf) {
+      this.addStep('🔽', `Root is empty, promote child to root`);
+      this.root = this.root.children[0];
+    }
+    
+    this.addStep('✅', `Deletion of ${key} complete`);
+  }
+
+  deleteFromNode(node, key) {
+    const idx = node.keys.findIndex(k => k === key);
+    
+    if (idx !== -1) {
+      // Key found in this node
+      if (node.isLeaf) {
+        // Case 1: Key in leaf - just remove it
+        this.addStep('🔍', `Found ${key} in leaf [${node.keys.join(', ')}]`, [key]);
+        node.keys.splice(idx, 1);
+        this.addStep('❌', `Removed ${key} from leaf`, [key]);
+      } else {
+        // Case 2: Key in internal node - replace with predecessor
+        this.addStep('🔍', `Found ${key} in internal node`, [key]);
+        const predecessor = this.getPredecessor(node.children[idx]);
+        this.addStep('🔄', `Replace ${key} with predecessor ${predecessor}`, [predecessor]);
+        node.keys[idx] = predecessor;
+        this.deleteFromNode(node.children[idx], predecessor);
+      }
+    } else {
+      // Key not in this node - find which child to descend into
+      if (node.isLeaf) {
+        this.addStep('⚠️', `Key ${key} not found`);
+        return;
+      }
+      
+      let childIdx = 0;
+      while (childIdx < node.keys.length && key > node.keys[childIdx]) {
+        childIdx++;
+      }
+      
+      const child = node.children[childIdx];
+      const needsFixing = child.keys.length === this.getMinKeys();
+      
+      if (needsFixing) {
+        this.addStep('⚠️', `Child may underflow (${child.keys.length} keys), preparing...`);
+        this.ensureChildHasEnoughKeys(node, childIdx);
+        
+        // After fixing, key might have moved - find correct child again
+        childIdx = 0;
+        while (childIdx < node.keys.length && key > node.keys[childIdx]) {
+          childIdx++;
+        }
+      }
+      
+      this.deleteFromNode(node.children[childIdx], key);
+    }
+  }
+
+  ensureChildHasEnoughKeys(parent, childIdx) {
+    const child = parent.children[childIdx];
+    
+    // Try to borrow from left sibling
+    if (childIdx > 0 && parent.children[childIdx - 1].keys.length > this.getMinKeys()) {
+      this.borrowFromLeft(parent, childIdx);
+      return;
+    }
+    
+    // Try to borrow from right sibling
+    if (childIdx < parent.children.length - 1 && parent.children[childIdx + 1].keys.length > this.getMinKeys()) {
+      this.borrowFromRight(parent, childIdx);
+      return;
+    }
+    
+    // Must merge
+    if (childIdx > 0) {
+      this.mergeWithSibling(parent, childIdx - 1);
+    } else {
+      this.mergeWithSibling(parent, childIdx);
+    }
+  }
+
+  borrowFromLeft(parent, childIdx) {
+    const child = parent.children[childIdx];
+    const leftSibling = parent.children[childIdx - 1];
+    
+    this.addStep('⬅️', `Borrow from left sibling [${leftSibling.keys.join(', ')}]`);
+    
+    // Move parent key down to child
+    child.keys.unshift(parent.keys[childIdx - 1]);
+    
+    // Move left sibling's last key up to parent
+    parent.keys[childIdx - 1] = leftSibling.keys.pop();
+    
+    // If not leaf, move child pointer too
+    if (!child.isLeaf) {
+      child.children.unshift(leftSibling.children.pop());
+    }
+    
+    this.addStep('✅', `Borrowed ${parent.keys[childIdx - 1]}, child now [${child.keys.join(', ')}]`);
+  }
+
+  borrowFromRight(parent, childIdx) {
+    const child = parent.children[childIdx];
+    const rightSibling = parent.children[childIdx + 1];
+    
+    this.addStep('➡️', `Borrow from right sibling [${rightSibling.keys.join(', ')}]`);
+    
+    // Move parent key down to child
+    child.keys.push(parent.keys[childIdx]);
+    
+    // Move right sibling's first key up to parent
+    parent.keys[childIdx] = rightSibling.keys.shift();
+    
+    // If not leaf, move child pointer too
+    if (!child.isLeaf) {
+      child.children.push(rightSibling.children.shift());
+    }
+    
+    this.addStep('✅', `Borrowed ${parent.keys[childIdx]}, child now [${child.keys.join(', ')}]`);
+  }
+
+  mergeWithSibling(parent, leftChildIdx) {
+    const leftChild = parent.children[leftChildIdx];
+    const rightChild = parent.children[leftChildIdx + 1];
+    
+    this.addStep('🔗', `Merge [${leftChild.keys.join(', ')}] and [${rightChild.keys.join(', ')}]`);
+    
+    // Pull parent key down and merge with right child
+    leftChild.keys.push(parent.keys[leftChildIdx]);
+    leftChild.keys.push(...rightChild.keys);
+    
+    // Merge children if not leaf
+    if (!leftChild.isLeaf) {
+      leftChild.children.push(...rightChild.children);
+    }
+    
+    // Remove the parent key and right child pointer
+    parent.keys.splice(leftChildIdx, 1);
+    parent.children.splice(leftChildIdx + 1, 1);
+    
+    this.addStep('✅', `Merged into [${leftChild.keys.join(', ')}]`);
+  }
+
+  getPredecessor(node) {
+    // Get the rightmost key in the subtree
+    while (!node.isLeaf) {
+      node = node.children[node.children.length - 1];
+    }
+    return node.keys[node.keys.length - 1];
+  }
+
+  getSuccessor(node) {
+    // Get the leftmost key in the subtree
+    while (!node.isLeaf) {
+      node = node.children[0];
+    }
+    return node.keys[0];
+  }
+
   getSteps() {
     return this.steps;
   }
@@ -172,6 +346,7 @@ class BTree {
 function BTreeVisualizer() {
   const [maxDegree, setMaxDegree] = useState(3);
   const [inputValue, setInputValue] = useState('');
+  const [deleteValue, setDeleteValue] = useState('');
   const [tree, setTree] = useState(() => new BTree(3));
   const [allSteps, setAllSteps] = useState([]);
   const [currentStep, setCurrentStep] = useState(-1);
@@ -338,6 +513,35 @@ function BTreeVisualizer() {
     setInputValue('');
   }, [inputValue, tree]);
 
+  // Handle delete
+  const handleDelete = useCallback(() => {
+    if (!deleteValue.trim()) return;
+
+    const keys = deleteValue.split(',').map(k => k.trim()).filter(k => k !== '');
+    const validKeys = [];
+
+    for (const k of keys) {
+      const num = parseInt(k, 10);
+      if (!isNaN(num)) {
+        validKeys.push(num);
+      }
+    }
+
+    if (validKeys.length === 0) return;
+
+    // Clear previous steps and delete all keys
+    tree.steps = [];
+    validKeys.forEach(key => {
+      tree.delete(key);
+    });
+
+    const newSteps = tree.getSteps();
+    setAllSteps(newSteps);
+    setCurrentStep(newSteps.length - 1);
+    setTree(tree);
+    setDeleteValue('');
+  }, [deleteValue, tree]);
+
   // Handle degree change - show modal if tree has keys
   const handleDegreeChange = useCallback(() => {
     const degree = parseInt(tempDegree, 10);
@@ -457,6 +661,12 @@ function BTreeVisualizer() {
       handleInsert();
     }
   }, [handleInsert]);
+
+  const handleDeleteKeyPress = useCallback((e) => {
+    if (e.key === 'Enter') {
+      handleDelete();
+    }
+  }, [handleDelete]);
 
   const maxKeys = maxDegree - 1;
   const minChildren = Math.ceil(maxDegree / 2);
@@ -595,6 +805,29 @@ function BTreeVisualizer() {
           }, 'Insert')
         ),
         React.createElement('div', { className: 'input-hint' }, 'Single or comma-separated, e.g. 10 or 10,20,30')
+      ),
+      
+      React.createElement('div', { className: 'input-section', style: { flex: '1 1 300px' } },
+        React.createElement('label', null, 'Delete Key(s)'),
+        React.createElement('div', { className: 'input-group' },
+          React.createElement('input', {
+            type: 'text',
+            placeholder: '5 or 3,7,5',
+            value: deleteValue,
+            onChange: (e) => setDeleteValue(e.target.value),
+            onKeyPress: handleDeleteKeyPress,
+            disabled: tree.getInsertedKeys().length === 0,
+            'aria-label': 'Delete keys'
+          }),
+          React.createElement('button', {
+            className: 'btn-primary',
+            onClick: handleDelete,
+            disabled: tree.getInsertedKeys().length === 0,
+            style: { background: '#ef4444' },
+            'aria-label': 'Delete keys'
+          }, 'Delete')
+        ),
+        React.createElement('div', { className: 'input-hint' }, 'Single or comma-separated, e.g. 5 or 3,7,5')
       ),
       
       React.createElement('div', { className: 'input-section', style: { flex: '0 1 240px' } },

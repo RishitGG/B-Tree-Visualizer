@@ -33,6 +33,10 @@ class BTree {
   getMinChildren() { return Math.ceil(this.maxDegree / 2); }
   getMinKeys() { return this.getMinChildren() - 1; }
 
+  isFull(node) {
+    return node.keys.length === this.getMaxKeys();
+  }
+
   addStep(icon, message, highlightKeys = []) {
     this.steps.push({
       icon,
@@ -56,8 +60,8 @@ class BTree {
     
     const root = this.root;
     
-    if (root.keys.length === 2 * this.t - 1) {
-      this.addStep('🔀', `Root is full (${root.keys.length} keys, max ${2 * this.t - 1})`);      
+    if (this.isFull(root)) {
+      this.addStep('🔀', `Root is full (${root.keys.length} keys, max ${this.getMaxKeys()})`);      
       const newRoot = new BTreeNode(false);
       newRoot.children.push(this.root);
       this.splitChild(newRoot, 0, key);
@@ -119,8 +123,8 @@ class BTree {
     const fullChild = parent.children[childIndex];
     const newChild = new BTreeNode(fullChild.isLeaf);
 
-    const t = this.getMinChildren();
-    const midIdx = t - 1;
+    const minChildren = this.getMinChildren();
+    const midIdx = minChildren - 1;
     const midKey = fullChild.keys[midIdx];
 
     this.addStep('🔀', `Splitting node [${fullChild.keys.join(' | ')}]`);
@@ -129,7 +133,7 @@ class BTree {
     // Split: upper half to new child
     newChild.keys = fullChild.keys.splice(midIdx + 1);
     if (!fullChild.isLeaf) {
-      newChild.children = fullChild.children.splice(t);
+      newChild.children = fullChild.children.splice(minChildren);
     }
     fullChild.keys.pop(); // Remove the middle key from fullChild
 
@@ -166,14 +170,14 @@ class BTree {
 
 // Main App Component
 function BTreeVisualizer() {
-  const [maxDegree, setMaxDegree] = useState(4);
+  const [maxDegree, setMaxDegree] = useState(3);
   const [inputValue, setInputValue] = useState('');
-  const [tree, setTree] = useState(() => new BTree(4));
+  const [tree, setTree] = useState(() => new BTree(3));
   const [allSteps, setAllSteps] = useState([]);
   const [currentStep, setCurrentStep] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1.0);
-  const [tempDegree, setTempDegree] = useState('4');
+  const [tempDegree, setTempDegree] = useState('3');
   const [showModal, setShowModal] = useState(false);
   const [pendingMaxDegree, setPendingMaxDegree] = useState(null);
   

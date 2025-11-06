@@ -956,9 +956,9 @@ body {
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
   padding: 1rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  display: flex;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .input-section {
@@ -1072,20 +1072,6 @@ button:focus-visible {
 
 .btn-primary:active:not(:disabled) {
   background: #1d4ed8;
-}
-
-.btn-danger {
-  background: #ef4444;
-  color: #ffffff;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-  filter: brightness(1.1);
-}
-
-.btn-danger:active:not(:disabled) {
-  background: #b91c1c;
 }
 
 .btn-secondary {
@@ -1222,6 +1208,6 @@ button:disabled {
   }
   
   .input-panel {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
 }
